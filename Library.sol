@@ -1,24 +1,34 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
-import "./Helper.sol";
+import "./Helpers.sol";
 
-contract Library {
+contract Library is Helpers{
     address public owner;
 
     struct Book {
+        uint id;
         string name;
         uint quantity;
         bool exists;
     }
 
-    mapping(string => Book) BookList;
+    uint counter;
 
-    mapping(string => address[]) BookBorrowerList;
+    Book[] public LibraryArchive;
 
-    mapping(address => string[]) ClientBorrowerList;
+    mapping(uint => Book) BookIndex;
+
+    mapping(uint => address[]) BookBorrowHistory;
+
+    mapping(address => uint[]) ClientBorrowList;
 
     modifier onlyOwnable(){
         require(msg.sender == owner, "Current user is not owner!");
+        _;
+    }
+
+    modifier shouldExist(uint bookId){
+        require(BookIndex[bookId].exists,"Book does not exist in library!");
         _;
     }
 
@@ -26,36 +36,67 @@ contract Library {
         owner = msg.sender;
     }
 
-    function AddBook(Book calldata newBook) public onlyOwnable{
-        if(BookList[newBook.name].exists){
-            revert("Book already exists in the Library!");
+    function AddBook(string calldata bookName, uint quantity) public onlyOwnable{
+        if(LibraryContainsBook(bookName) || BookIndex[counter].exists){
+            revert("This book exists in the library!");
+        }
+        if(quantity < 1){
+            revert("Quantity cannot be less than 1!");
         }
 
-        BookList[newBook.name] = newBook;
-        BookList[newBook.name].exists = true;
+        Book memory newBook;
+        newBook.id = counter;
+        newBook.name = bookName;
+        newBook.quantity = quantity;
+        newBook.exists = true;
+
+        BookIndex[counter] = newBook;
+        LibraryArchive.push(newBook);
+
+        counter++;
     }
 
-    function BorrowBook(string calldata bookName) public{
-        if(DoesContainElement(bookName, msg.sender)){
-            revert("Book already exists in the Library!");
-        }
-        if(BookList[bookName].quantity==0){
-            revert("Book is out of stock currently!");
+    function BorrowBook(uint bookId) public shouldExist(bookId){    
+        if(BookIndex[bookId].quantity==0){
+            revert("This book is out of stock currently!");
+        }    
+        if(intArrContainsValue(bookId, ClientBorrowList[msg.sender])){
+            revert("You've already borrowed that book!");
         }
 
-        ClientBorrowerList[msg.sender];
-        BookBorrowerList[bookName].push(msg.sender);
-        BookList[bookName].quantity --;
+        ClientBorrowList[msg.sender].push(bookId);
+
+
+        if(!addressArrContainsValue(msg.sender, BookBorrowHistory[bookId])){
+            BookBorrowHistory[bookId].push(msg.sender);        
+        }
+
+        BookIndex[bookId].quantity --;
+        LibraryArchive[bookId].quantity --;
     }
 
-    function ReturnBook(string calldata bookName) public {
-        if(!DoesContainElement(bookName, msg.sender)){
-            revert("Book does not exists in the Library!");
+    function ReturnBook(uint bookId) public shouldExist(bookId){
+        if(!intArrContainsValue(bookId, ClientBorrowList[msg.sender])){
+            revert("You havent borrowed that book!");
         }
-        //if(BookBorrowerList[bookName])
-
-        ClientBorrowerList[msg.sender] += bookName;
-        BookBorrowerList[bookName] -= msg.sender;
-        BookList[bookName].quantity ++;
+  
+        //remove book from list of borrowed books for the specific client
+        removeIntArrElement(ClientBorrowList[msg.sender], bookId);
+        BookIndex[bookId].quantity ++;
+        LibraryArchive[bookId].quantity ++;
     }
+
+    function BorrowHistory(uint bookId) public view shouldExist(bookId) returns (address[] memory){
+        return BookBorrowHistory[bookId];
+    }
+
+    function LibraryContainsBook(string calldata bookName) private view returns (bool){
+        for(uint i=0;i<LibraryArchive.length;i++){
+            if(compareStrings(LibraryArchive[i].name, bookName)){
+                return true;
+            }
+        }
+        return false;
+    }
+
 }
